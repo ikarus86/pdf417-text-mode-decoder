@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from PIL import Image
 import itertools
 from pdf417dict import codewords_tbl
@@ -6,6 +7,7 @@ import sys
 
 # Global variables
 val_num = 0
+val_byte = 0
 pdf_mode = 'text'
 text_submode = 'upper'
 text_shift = False
@@ -86,7 +88,10 @@ def decode_part(part):
         'punct': ";<>@[\\]_`~!\r\t,:\n-.$/\"|*()?{}' "
     }
 
-    ret = 'unknown'
+    if text_shift:
+        ret = text_dict[text_shift][part]
+        text_shift = False
+        return ret
     if text_submode == 'upper':
         if part == 27:
             text_submode = 'lower'
@@ -95,15 +100,10 @@ def decode_part(part):
             text_submode = 'mixed'
             return 'ml'
         elif part == 29:
-            text_shift =  'punct'
+            text_shift = 'punct'
             return 'ps'
         else:
-            if text_shift:
-                ret = text_dict[text_shift][part]
-                text_shift = False
-            else:
-                ret = text_dict[text_submode][part]
-            return ret
+            return text_dict[text_submode][part]
 
     elif text_submode == 'lower':
         if part == 27:
@@ -116,12 +116,7 @@ def decode_part(part):
             text_shift = 'punct'
             return 'ps'
         else:
-            if text_shift:
-                ret = text_dict[text_shift][part]
-                text_shift = False
-            else:
-                ret = text_dict[text_submode][part]
-            return ret
+            return text_dict[text_submode][part]
 
     elif text_submode == 'mixed':
         if part == 25:
@@ -137,32 +132,22 @@ def decode_part(part):
             text_shift = 'punct'
             return 'ps'
         else:
-            if text_shift:
-                ret = text_dict[text_shift][part]
-                text_shift = False
-            else:
-                ret = text_dict[text_submode][part]
-            return ret
+            return text_dict[text_submode][part]
 
     elif text_submode == 'punct':
         if part == 29:
             text_submode = 'upper'
             return 'al'
         else:
-            if text_shift:
-                ret = text_dict[text_shift][part]
-                text_shift = False
-            else:
-                ret = text_dict[text_submode][part]
-            return ret
+            return text_dict[text_submode][part]
 
     else:
         return 'Error'
 
 
 def decode_cw(cw):
-    global pdf_mode, val_num, text_submode, text_shift
-
+    global pdf_mode, val_num, val_byte, text_submode, text_shift
+    #print 'Codeword: %d' % cw
     if cw == 900:
         pdf_mode = 'text'
         text_submode = 'upper'
@@ -171,7 +156,16 @@ def decode_cw(cw):
             val = val_num
             val_num = 0
             num_str = '%d' % val
-            return (num_str[1:], '')
+            return num_str[1:], ''
+        else:
+            return ''
+    elif cw == 901:
+        pdf_mode = 'bin'
+        if val_num > 0:
+            val = val_num
+            val_num = 0
+            num_str = '%d' % val
+            return num_str[1:], ''
         else:
             return ''
     elif cw == 902:
@@ -185,19 +179,28 @@ def decode_cw(cw):
         elif pdf_mode == 'num':
             decode_number(cw)
             return ''
+        elif pdf_mode == 'bin':
+            return decode_byte(cw)
 
 
 def decode_text(cw):
-    H = cw/30
-    L = cw%30
+    H = cw / 30
+    L = cw % 30
 
-    return (decode_part(H), decode_part(L))
+    return decode_part(H), decode_part(L)
 
 
 def decode_number(cw):
     global val_num
     val_num *= 900
     val_num += cw
+
+
+def decode_byte(cw):
+    dict_eascii = {
+        168: '¿'
+    }
+    return dict_eascii[cw], ''
 
 
 def get_cwinfo(codewords):
@@ -270,6 +273,7 @@ def pdf417_decode(img_path):
     codewords_list = [cw for row in codewords for cw in row[1:-1]]
     codewords_noerr = filter_err(codewords_list, info['error_level'])
 
+    #print codewords_noerr
     vals = [decode_cw(cw) for cw in codewords_noerr]
     _reset_global_vars()
 
@@ -285,6 +289,8 @@ def pdf417_decode(img_path):
     # print get_content(vals)
     # print "*" * 80
     # print "*" * 80
+    #print vals
+    #print get_content(vals)[1:]
 
     return get_content(vals)[1:]
 
